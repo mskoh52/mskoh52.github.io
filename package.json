@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "apps:init": "git submodule update --init --recursive",
+    "apps:update": "git submodule update --remote --recursive",
     "serve": "node scripts/serve.mjs --target=local",
     "serve:phone": "node scripts/serve.mjs --target=phone",
     "serve:build": "node scripts/serve.mjs --target=local --build-first",
@@ -13,10 +15,7 @@
   "appHub": {
     "env": {
       "PUBLIC_DIR": "public",
-      "SPA_FALLBACK": "0",
-      "APP_ONE_REPOSITORY": "https://github.com/mskoh52/morse-trainer.git",
-      "APP_ONE_INSTALL_COMMAND": "sh -c 'node build.js && mv dist/morse-trainer.html dist/index.html'",
-      "APP_TWO_REPOSITORY": "https://github.com/mskoh52/arithmetic-practice.git"
+      "SPA_FALLBACK": "0"
     },
     "targets": {
       "local": {

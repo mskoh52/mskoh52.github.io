@@ -1,0 +1,6 @@
+[submodule "arithmetic-practice"]
+	path = arithmetic-practice
+	url = https://github.com/mskoh52/arithmetic-practice.git
+[submodule "morse-trainer"]
+	path = morse-trainer
+	url = https://github.com/mskoh52/morse-trainer.git

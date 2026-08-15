@@ -3,18 +3,13 @@
     "name": "Morse Trainer",
     "description": "Learn morse code",
     "slug": "morse-trainer",
-    "repositoryEnv": "APP_ONE_REPOSITORY",
-    "branchEnv": "APP_ONE_BRANCH",
-    "installCommandEnv": "APP_ONE_INSTALL_COMMAND",
-    "buildCommandEnv": "APP_ONE_BUILD_COMMAND"
+    "path": "morse-trainer",
+    "indexFile": "morse-trainer.html"
   },
   {
     "name": "Arithmetic Practice",
     "description": "Practice arithmetic",
     "slug": "arithmetic-practice",
-    "repositoryEnv": "APP_TWO_REPOSITORY",
-    "branchEnv": "APP_TWO_BRANCH",
-    "installCommandEnv": "APP_TWO_INSTALL_COMMAND",
-    "buildCommandEnv": "APP_TWO_BUILD_COMMAND"
+    "path": "arithmetic-practice"
   }
 ]

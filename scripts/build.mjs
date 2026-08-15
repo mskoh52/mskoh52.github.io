@@ -1,6 +1,5 @@
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
@@ -26,21 +25,28 @@ function run(command, options = {}) {
   }
 }
 
-function resolveInstallCommand(repositoryDirectory, configuredCommand) {
+async function hasDependencies(appDirectory) {
+  const manifestPath = path.join(appDirectory, "package.json");
+  if (!existsSync(manifestPath)) return false;
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  return Object.keys({ ...manifest.dependencies, ...manifest.devDependencies }).length > 0;
+}
+
+async function resolveInstallCommand(appDirectory, configuredCommand) {
   if (configuredCommand) return configuredCommand;
-  if (existsSync(path.join(repositoryDirectory, "pnpm-lock.yaml"))) return "corepack pnpm install --frozen-lockfile";
-  if (existsSync(path.join(repositoryDirectory, "yarn.lock"))) return "corepack yarn install --immutable";
-  if (existsSync(path.join(repositoryDirectory, "package-lock.json"))) return "npm ci";
-  if (existsSync(path.join(repositoryDirectory, "package.json"))) return "npm install";
-  return null;
+  if (!(await hasDependencies(appDirectory))) return null;
+  if (existsSync(path.join(appDirectory, "pnpm-lock.yaml"))) return "corepack pnpm install --frozen-lockfile";
+  if (existsSync(path.join(appDirectory, "yarn.lock"))) return "corepack yarn install --immutable";
+  if (existsSync(path.join(appDirectory, "package-lock.json"))) return "npm ci";
+  return "npm install";
 }
 
 function validateConfig(apps) {
   const slugs = new Set();
 
   for (const app of apps) {
-    if (!app.name || !app.slug || !app.repositoryEnv) {
-      throw new Error("Every site needs name, slug, and repositoryEnv values.");
+    if (!app.name || !app.slug) {
+      throw new Error("Every site needs name and slug values.");
     }
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.slug)) {
       throw new Error(`Invalid slug '${app.slug}'. Use lowercase letters, numbers, and hyphens.`);
@@ -50,32 +56,41 @@ function validateConfig(apps) {
   }
 }
 
-async function buildApp(app, workDirectory) {
-  const repository = process.env[app.repositoryEnv];
-  if (!repository) return { ...app, configured: false };
+async function isInitializedSubmodule(appDirectory) {
+  if (!existsSync(appDirectory)) return false;
+  const entries = await readdir(appDirectory);
+  return entries.length > 0;
+}
 
-  const repositoryDirectory = path.join(workDirectory, app.slug);
-  const branch = app.branchEnv ? process.env[app.branchEnv] : "";
-  const branchArgument = branch ? `--branch ${JSON.stringify(branch)}` : "";
+async function buildApp(app) {
+  const submodulePath = app.path ?? app.slug;
+  const appDirectory = path.join(projectRoot, submodulePath);
 
-  console.log(`\nBuilding ${app.name}`);
-  run(`git clone --depth 1 ${branchArgument} ${JSON.stringify(repository)} ${JSON.stringify(repositoryDirectory)}`);
-
-  const installCommand = app.installCommandEnv ? process.env[app.installCommandEnv] : "";
-  const resolvedInstallCommand = resolveInstallCommand(repositoryDirectory, installCommand);
-  if (resolvedInstallCommand) run(resolvedInstallCommand, { cwd: repositoryDirectory });
-
-  const buildCommand = (app.buildCommandEnv && process.env[app.buildCommandEnv]) || "node build.js";
-  run(buildCommand, { cwd: repositoryDirectory });
-
-  const appDistDirectory = path.join(repositoryDirectory, "dist");
-  const appIndexPath = path.join(appDistDirectory, "index.html");
-  if (!existsSync(appIndexPath)) {
-    throw new Error(`${app.name} did not produce dist/index.html.`);
+  if (!(await isInitializedSubmodule(appDirectory))) {
+    return { ...app, submodulePath, configured: false };
   }
 
-  await cp(appDistDirectory, path.join(outputDirectory, app.slug), { recursive: true });
-  return { ...app, configured: true };
+  console.log(`\nBuilding ${app.name}`);
+
+  const installCommand = await resolveInstallCommand(appDirectory, app.installCommand);
+  if (installCommand) run(installCommand, { cwd: appDirectory });
+
+  run(app.buildCommand ?? "node build.js", { cwd: appDirectory });
+
+  const appDistDirectory = path.join(appDirectory, app.distDirectory ?? "dist");
+  const appIndexPath = path.join(appDistDirectory, app.indexFile ?? "index.html");
+  if (!existsSync(appIndexPath)) {
+    throw new Error(`${app.name} did not produce ${path.relative(appDirectory, appIndexPath)}.`);
+  }
+
+  const publishDirectory = path.join(outputDirectory, app.slug);
+  await cp(appDistDirectory, publishDirectory, { recursive: true });
+
+  if (app.indexFile && app.indexFile !== "index.html") {
+    await rename(path.join(publishDirectory, app.indexFile), path.join(publishDirectory, "index.html"));
+  }
+
+  return { ...app, submodulePath, configured: true };
 }
 
 function renderCard(app, index) {
@@ -88,7 +103,7 @@ function renderCard(app, index) {
           <p class="app-card__status">Configuration needed</p>
           <h2>${app.name}</h2>
           <p>${app.description ?? "Static web application."}</p>
-          <span class="app-card__action">Set ${app.repositoryEnv}</span>
+          <span class="app-card__action">Run git submodule update --init ${app.submodulePath}</span>
         </div>
       </article>`;
   }
@@ -120,16 +135,11 @@ async function main() {
 
   await rm(outputDirectory, { recursive: true, force: true });
   await mkdir(outputDirectory, { recursive: true });
-  const workDirectory = await mkdtemp(path.join(tmpdir(), "static-app-hub-"));
 
-  try {
-    const builtApps = [];
-    for (const app of apps) builtApps.push(await buildApp(app, workDirectory));
-    await renderIndex(builtApps);
-    console.log(`\nPublished ${builtApps.filter((app) => app.configured).length} application(s).`);
-  } finally {
-    await rm(workDirectory, { recursive: true, force: true });
-  }
+  const builtApps = [];
+  for (const app of apps) builtApps.push(await buildApp(app));
+  await renderIndex(builtApps);
+  console.log(`\nPublished ${builtApps.filter((app) => app.configured).length} application(s).`);
 }
 
 main().catch((error) => {

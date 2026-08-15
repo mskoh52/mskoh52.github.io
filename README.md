@@ -1,42 +1,49 @@
 # Static App Hub
 
-A small static index that builds two existing GitHub-hosted static web apps and presents them from one shared index page. Each source repository is cloned during build, its `build.js` script is run, and its complete `dist` directory is published under a dedicated path.
+A small static index that builds the static web apps vendored as git submodules and presents them from one shared index page. Each submodule's build script is run in place, and its complete `dist` directory is published under a dedicated path.
 
 ## Technologies
 
 - Node.js 22 build script
 - Static HTML and CSS
-- GitHub repositories as application sources
+- Git submodules as application sources
 
 ## Configure the applications
 
-The default entries live in `sites.config.json`. Change each app's `name`, `description`, and `slug` to match the projects, then add these environment variables:
+The entries live in `sites.config.json`. Each entry describes one submodule:
 
-| Variable | Required | Purpose |
+| Field | Required | Purpose |
 | --- | --- | --- |
-| `APP_ONE_REPOSITORY` | Yes | Git clone URL for the first repository |
-| `APP_TWO_REPOSITORY` | Yes | Git clone URL for the second repository |
-| `APP_ONE_BRANCH` | No | Branch or tag; defaults to the repository's default branch |
-| `APP_TWO_BRANCH` | No | Branch or tag; defaults to the repository's default branch |
-| `APP_ONE_INSTALL_COMMAND` | No | Overrides automatic dependency installation |
-| `APP_TWO_INSTALL_COMMAND` | No | Overrides automatic dependency installation |
-| `APP_ONE_BUILD_COMMAND` | No | Overrides the default `node build.js` command |
-| `APP_TWO_BUILD_COMMAND` | No | Overrides the default `node build.js` command |
+| `name` | Yes | Card title |
+| `slug` | Yes | Published URL path under `/` |
+| `path` | No | Submodule directory; defaults to `slug` |
+| `description` | No | Card body text |
+| `installCommand` | No | Overrides automatic dependency installation |
+| `buildCommand` | No | Overrides the default `node build.js` command |
+| `distDirectory` | No | Build output directory; defaults to `dist` |
+| `indexFile` | No | Entry file inside the output, renamed to `index.html` when published; defaults to `index.html` |
 
-For public repositories, use an HTTPS clone URL such as `https://github.com/organization/repository.git`. Private repositories need Git credentials; do not store credentials in `sites.config.json`.
+Adding an application:
 
-After deployment, the hub is available at `/`, while the applications are served at `/app-one/` and `/app-two/` unless their slugs are changed.
+```bash
+git submodule add https://github.com/organization/repository.git repository
+```
 
-Each application must generate `dist/index.html`. Any additional files inside `dist` are copied with it. Application asset URLs should be relative or configured for the application's published slug.
+Then add a matching entry to `sites.config.json`.
+
+Each application must generate an entry file inside its output directory. Any additional files inside that directory are copied with it. Application asset URLs should be relative or configured for the application's published slug.
 
 ## Run locally
 
-Set the repository variables in your shell and run:
-
 ```bash
-APP_ONE_REPOSITORY="https://github.com/example/first-app.git" \
-APP_TWO_REPOSITORY="https://github.com/example/second-app.git" \
+npm run apps:init
 npm run build
 ```
 
-Open `public/index.html` through any static file server. If repository variables are omitted, the build still creates the hub and displays configuration instructions in place of active links.
+`npm run apps:update` fetches the latest upstream commit for every submodule. Commit the resulting submodule pointers to deploy those versions.
+
+Open `public/index.html` through any static file server, or run `npm run serve:build`. If a submodule is not initialized, the build still creates the hub and displays setup instructions in place of that application's link.
+
+## Deployment
+
+`.github/workflows/pages.yml` checks out the repository with `submodules: recursive`, runs `npm run build`, and publishes `public/` to GitHub Pages. Deployments use the submodule commits recorded on `main`, so updating an application requires committing its new submodule pointer here.
